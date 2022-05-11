@@ -18,9 +18,9 @@ all_files = glob.glob(path + "/*.csv")
 li = []
 
 for filename in all_files:
-    df = pd.read_csv(filename, index_col=0, header=0)
+    df = pd.read_csv(filename)
     li.append(df)
 
 df = pd.concat(li, axis=0, ignore_index=True)
 
-df.to_json('landing/persistent/data_solution/accidents_opendata/accidents_opendata.json')
+df.to_json('landing/persistent/accidents_opendata/accidents_opendata.json', orient='records')

@@ -1,6 +1,8 @@
 import pandas as pd
 from datetime import date
 import os
+from bs4 import BeautifulSoup
+import requests
 
 
 def get_filepaths(directory):
@@ -42,13 +44,47 @@ def collect_data(update_years):
     '''
     
     '''
-    for year in update_years:
-        try:
-            df = pd.read_csv('https://opendata-ajuntament.barcelona.cat/data/dataset/e769eb9d-d778-4cd7-9e3a-5858bba49b20/resource/bcfc0866-7e2a-4054-9a93-fb3f371fc5eb/download/{}_accidents_gu_bcn.csv'.format(year))
-            df.to_csv('landing/temporal/opendatabcn-accidents/{}_accidents_bcn.csv'.format(year), encoding='utf-8')
-            print('accidents data for {} extracted'.format(year))
-        except:
-            print('unable to extract accidents data for {}'.format(year))
+    # Input page link
+    link = 'https://opendata-ajuntament.barcelona.cat/data/es/dataset/accidents-gu-bcn'
+
+    # Request HTML for the link
+    html_text = requests.get(link).text
+    soup = BeautifulSoup(html_text, features="html.parser")
+    # Parse link HTML
+    yearly_reports = soup.find('ul', {'class': 'resource-list'})
+    report_links = yearly_reports.findAll('a', {'class':'heading'}, href=True)
+
+    # extracting report urls from dataset page
+    yearly_reports = {}
+    for i in report_links:
+        yearly_reports[i.text.strip()[:-3].lower()] = 'https://opendata-ajuntament.barcelona.cat{}'.format(i['href'].strip())
+
+    # removing 'xml' datasets and previously-extracted yearly reports
+    yearly_reports = {key[:4]:val for key, val in yearly_reports.items() if key[-3:] != 'xml' and key[:4] in update_years}
+
+    # extract pending yearly reports
+    for key, value in yearly_reports.items():
+        # Request HTML for the link
+        html_text = requests.get(value).text
+        soup = BeautifulSoup(html_text, features="html.parser")
+        # Parse link HTML
+        download_section = soup.find('div', {'class': 'actions resource-actions'})
+        reports = download_section.findAll('a', {'class':'resource-type-None'}, href=True)
+        # progress-tracker(UI)
+        print('\nExtracting report for {}...'.format(key))
+
+        for i in reports:
+            try: # more recent reports dont need to specify encoding
+                df = pd.read_csv(str(i['href']))
+            except: # I know this is ugly but it is necessary
+                try: # some reports use ';' as delimiter
+                    df = pd.read_csv(str(i['href']), encoding='unicode_escape')
+                except:
+                    print('*** This report uses semicolon (;) as delimiter *** accomodating...')
+                    df = pd.read_csv(str(i['href']), encoding='unicode_escape', sep=';')
+            df.to_csv('landing/temporal/opendatabcn-accidents/{}_accidents_bcn.csv'.format(key), encoding='utf-8', index=False)
+            # progress-tracker(UI)
+            print('{}_accidents_bcn.csv exported to temporal landing zone'.format(key))
 
             
 if __name__ == '__main__':
@@ -58,7 +94,8 @@ if __name__ == '__main__':
     
     # opendatabcn data collection
     if update_years:
+        print('\naccidents data from opendatabcn is not up to date!')
         collect_data(update_years)
-        print('update complete!')
+        print('\nUpdate Complete!\n')
     else:
-        print('accidents data is already up to date!')
+        print('\naccidents data from opendatabcn is already up to date!\n')
