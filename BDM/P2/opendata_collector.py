@@ -3,6 +3,7 @@ from datetime import date
 import os
 from bs4 import BeautifulSoup
 import requests
+import sys
 
 
 def get_filepaths(directory):
@@ -22,12 +23,15 @@ def get_filepaths(directory):
     return file_names  # Output
 
 
-def check_update_years(files):
+def check_update_years(files, topic):
     '''
     
     '''
     current_year = date.today().year # get current year
-    update_years = [str(year) for year in range(2014, current_year)] # opendatabcn-lloguer_preu available years
+    if topic == 'lloguer_preu':
+        update_years = [str(year) for year in range(2014, current_year)] # opendatabcn-lloguer_preu available years
+    elif topic == 'accidents':
+        update_years = [str(year) for year in range(2010, current_year)] # opendatabcn-accidents available years
     
     # Check years present in topic's current landing zone
     present_years = [element[:4] for element in files] # returns a list of present years
@@ -40,12 +44,15 @@ def check_update_years(files):
     return update_years
 
 
-def collect_data(update_years):
+def collect_data(update_years, topic):
     '''
     
     '''
     # Input page link
-    link = 'https://opendata-ajuntament.barcelona.cat/data/es/dataset/est-mercat-immobiliari-lloguer-mitja-mensual'
+    if topic == 'lloguer_preu':
+        link = 'https://opendata-ajuntament.barcelona.cat/data/es/dataset/est-mercat-immobiliari-lloguer-mitja-mensual'
+    elif topic == 'accidents':
+        link = 'https://opendata-ajuntament.barcelona.cat/data/es/dataset/accidents-gu-bcn'
 
     # Request HTML for the link
     html_text = requests.get(link).text
@@ -77,25 +84,31 @@ def collect_data(update_years):
             try: # more recent reports dont need to specify encoding
                 df = pd.read_csv(str(i['href']))
             except: # I know this is ugly but it is necessary
-                try: # some reports use ';' as delimiter
+                try: # older reports require specified enconding
                     df = pd.read_csv(str(i['href']), encoding='unicode_escape')
-                except:
-                    print('*** This report uses semicolon (;) as delimiter *** accomodating...')
+                    print('*** This report is older and requires specified encoding *** accomodating...')
+                except: # some reports use ';' as delimiter
                     df = pd.read_csv(str(i['href']), encoding='unicode_escape', sep=';')
-            df.to_csv('landing/temporal/opendatabcn-lloguer_preu/{}_lloguer_preu_bcn.csv'.format(key), encoding='utf-8', index=False)
+                    print('*** This report uses semicolon (;) as delimiter *** accomodating...')
+            # export to .csv in corresponding path
+            df.to_csv('landing/temporal/opendatabcn-{}/{}_{}_bcn.csv'.format(topic, key, topic), encoding='utf-8', index=False)
             # progress-tracker(UI)
-            print('{}_lloguer_preu_bcn.csv exported to temporal landing zone'.format(key))
+            print('{}_{}_bcn.csv exported to temporal landing zone'.format(key, topic))
 
 
 if __name__ == '__main__':
-    #
-    opendatabcn_filenames = get_filepaths("landing/temporal/opendatabcn-lloguer_preu")
-    update_years = check_update_years(opendatabcn_filenames)
+    # check valid sys.argv[1] input from user
+    
+    
+    # check if temporal landing is up to date (what years are missing?)
+    opendatabcn_filenames = get_filepaths("landing/temporal/opendatabcn-{}".format(sys.argv[1]))
+    update_years = check_update_years(opendatabcn_filenames, sys.argv[1])
     
     # opendatabcn data collection
     if update_years:
-        print('\nlloguer preu data from opendatabcn is not up to date!')
-        collect_data(update_years)
+        print('\n{} data from opendatabcn is not up to date!'.format(sys.argv[1]))
+        # collection function call...
+        collect_data(update_years, sys.argv[1])
         print('\nUpdate Complete!\n')
     else:
-        print('\nlloguer preu data from opendatabcn is already up to date!\n')
+        print('\n{} data from opendatabcn is already up to date!\n'.format(sys.argv[1]))

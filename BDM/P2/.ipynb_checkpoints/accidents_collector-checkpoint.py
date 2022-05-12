@@ -3,6 +3,7 @@ from datetime import date
 import os
 from bs4 import BeautifulSoup
 import requests
+import sys
 
 
 def get_filepaths(directory):
