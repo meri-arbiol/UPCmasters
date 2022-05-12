@@ -31,7 +31,7 @@ def check_update_years(files, topic):
     if topic == 'lloguer_preu':
         update_years = [str(year) for year in range(2014, current_year)] # opendatabcn-lloguer_preu available years
     elif topic == 'accidents':
-        update_years = [str(year) for year in range(2010, current_year)] # opendatabcn-accidents available years
+        update_years = [str(year) for year in range(2016, current_year)] # opendatabcn-accidents available years
     
     # Check years present in topic's current landing zone
     present_years = [element[:4] for element in files] # returns a list of present years
