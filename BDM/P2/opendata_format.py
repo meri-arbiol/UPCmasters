@@ -48,35 +48,31 @@ def unroll(x: Tuple[str, Tuple[float, str]]):
     return (ne_re, price)
 
 
-if __name__ == '__main__':
-
-    collections = ['income', 'preu', 'income_lookup_district', 'income_lookup_neighborhood', 'rent_lookup_district', 'rent_lookup_neighborhood']
-
-    incomeRDD = loadMongoRDD(collections[0]).cache()
-    preuRDD = loadMongoRDD(collections[1]).cache()
-    lookup_income_neighborhood_RDD = loadMongoRDD(collections[3]).map(lambda x: (x['neighborhood'], x['neighborhood_reconciled'])).cache()
-    #lookup_rent_neighborhood_RDD = loadMongoRDD(collections[5]).map(lambda x: (x['ne'], x['ne_re'])).cache()
-
-
-    #mean of RFD (family income index) and mean of population per neighborhood (key)
-    rdd1 = incomeRDD \
+def generateIncomeRDD(incomeRDD):
+    """
+    RDD generated has the following structure:
+    - Key: neighborhood
+    - Values: last year of RFD (family income index), last year of population, increase of RFD, increase od population
+    """
+    rdd = incomeRDD \
         .map(lambda x: (x['neigh_name '], (x['district_name'], mostrecent(x['info'], 'RFD'), increase(x['info'], 'RFD'), mostrecent(x['info'], 'pop'), increase(x['info'], 'pop')))) \
         .join(lookup_income_neighborhood_RDD) \
         .distinct() \
         .map(unroll) \
         .cache()
-
-    # print('####################')
-    # print('****** RDD1 ******')
-    # rdd1.foreach(lambda r: print(r))
+    return rdd
 
 
-    preuRDD = preuRDD\
+def generatePreuRDD(preuRDD):
+
+    # we remove the missing values
+    preuRDD = preuRDD \
         .filter(lambda x: x['Preu'] != '--') \
         .filter(lambda x: x['Preu'] != None) \
         .filter(lambda x: 2020 <= x['Any']) \
         .cache()
 
+    #here we create a RDD only with the "superficie" values and and do the mean of all the price per trimester in the last two years
     rdd2_sup = preuRDD \
         .filter(lambda x: 'superfície' in x['Lloguer_mitja']) \
         .map(lambda x: ((x['Nom_Barri'], x['Any'], x['Nom_Districte']), float(x['Preu']))) \
@@ -86,6 +82,7 @@ if __name__ == '__main__':
         .distinct() \
         .cache()
 
+    #here we create a RDD only with the "mensual" values and and do the mean of all the price per trimester in the last two years
     rdd2_men = preuRDD \
         .filter(lambda x: 'mensual' in x['Lloguer_mitja']) \
         .map(lambda x: ((x['Nom_Barri'], x['Any'], x['Nom_Districte']), float(x['Preu']))) \
@@ -95,24 +92,47 @@ if __name__ == '__main__':
         .distinct() \
         .cache()
 
+    #join them
     rdd2_join = rdd2_sup.join(rdd2_men) \
         .cache()
 
+    #do the mapping of the interesting values
     rdd2_all = rdd2_join \
         .map(lambda x: (x[0][0], (x[0][2], x[0][1], x[1][0], x[1][1]))) \
         .cache()
 
-    rdd2_join2 = rdd2_all\
+    # we do a join of the values in order to have both last years in the same row
+    rdd2_join2 = rdd2_all \
         .filter(lambda x: 2021 == x[1][1]) \
         .join(rdd2_all.filter(lambda x: 2020 == x[1][1])) \
         .cache()
 
     # neigh (key), district, precio superficie ultimo año, precio mensual ultimo año, incremento precio superficie, incremento precio mensual
-    rdd2 = rdd2_join2 \
+    rdd = rdd2_join2 \
         .map(lambda x: (x[0], (x[1][0][0], x[1][0][2], x[1][0][3], float("{:.2f}".format(x[1][0][2]-x[1][1][2])), float("{:.2f}".format(x[1][0][3]-x[1][1][3]))))) \
         .join(lookup_income_neighborhood_RDD) \
         .map(unroll) \
         .cache()
+
+    return rdd
+
+
+if __name__ == '__main__':
+
+    collections = ['income', 'preu', 'income_lookup_district', 'income_lookup_neighborhood', 'rent_lookup_district', 'rent_lookup_neighborhood']
+
+    incomeRDD = loadMongoRDD(collections[0]).cache()
+    preuRDD = loadMongoRDD(collections[1]).cache()
+    lookup_income_neighborhood_RDD = loadMongoRDD(collections[3]).map(lambda x: (x['neighborhood'], x['neighborhood_reconciled'])).cache()
+    #lookup_rent_neighborhood_RDD = loadMongoRDD(collections[5]).map(lambda x: (x['ne'], x['ne_re'])).cache()
+
+    rdd1 = generateIncomeRDD(incomeRDD)
+
+    # print('####################')
+    # print('****** RDD1 ******')
+    # rdd1.foreach(lambda r: print(r))
+
+    rdd2 = generatePreuRDD(preuRDD)
 
     rdd3 = rdd1 \
         .join(rdd2) \
