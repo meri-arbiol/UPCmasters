@@ -24,7 +24,7 @@ for filename in all_files:
 
 df = pd.concat(li, axis=0, ignore_index=True)
 
-df.to_json('landing/persistent/accidents_opendata/accidents_opendata.json', orient='records')
+df.to_json('landing/persistent/accidents_opendata/accidents_opendata.json', orient='index')
 
 # lloguer preu opendatabcn
 path = r'landing/temporal/opendatabcn-lloguer_preu/'
@@ -38,4 +38,4 @@ for filename in all_files:
 
 df = pd.concat(li, axis=0, ignore_index=True)
 
-df.to_json('landing/persistent/preu_opendata/preu_opendata.json', orient='records')
+df.to_json('landing/persistent/preu_opendata/preu_opendata.json', orient='index')

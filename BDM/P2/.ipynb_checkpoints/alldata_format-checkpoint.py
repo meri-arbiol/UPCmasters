@@ -1,10 +1,14 @@
+import os
 import operator
-
-from pyspark import RDD
-from pyspark.sql import SparkSession
-from pyspark import SparkContext
-from pyspark.sql.functions import explode, col
 from typing import Tuple
+import pandas as pd
+import numpy as np
+from pyspark import RDD
+from pyspark import SparkContext
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType
+from pyspark.sql.functions import lit
+from pyspark.sql.functions import explode, col
 
 
 def loadMongoRDD(collection: str):
@@ -116,29 +120,73 @@ def generatePreuRDD(preuRDD):
     return rdd
 
 
+def validate_idealista(rdd_in):
+    '''
+    
+    '''
+
+
+def transform_idealista(rdd_in):
+    '''
+    
+    '''
+    transform_rdd = rdd_in.map(lambda x: (x['suggestedTexts'],
+                                        x['propertyCode'], 
+                                        x['propertyType'],
+                                        x['operation'],
+                                        x['country'],
+                                        x['municipality'],
+                                        x['province'],
+                                        x['district'], 
+                                        x['neighborhood'],
+                                        x['price'],
+                                        x['priceByArea'],
+                                        x['rooms'],
+                                        x['bathrooms'],
+                                        x['size'],
+                                        x['status'],
+                                        x['floor'],
+                                        x['hasLift'],
+                                        x['parkingSpace'],
+                                        x['newDevelopment'],
+                                        x['numPhotos'],
+                                        x['distance'], 
+                                        x['exterior'])) \
+    .filter(lambda row: all(x is not None for x in row)) \
+    .distinct()
+    
+    return transform_rdd
+    
+
+def merge_all():
+    '''
+    
+    '''
+
+
+def main():
+    '''
+    
+    '''
+    # main code
+    directory = "landing/persistent/idealista"
+    parq_files = {}  # List which will store all of the full filepaths.
+    # Walk the tree.
+    for root, directories, files in os.walk(directory):
+        for filename in files:
+            if filename[-7:] == 'parquet':
+                parq_files[root[29:39]] = (root+'/'+filename)
+    
+    # spark transformations in sequence for each parquet file
+    for key in parq_files:
+        # read spark df from parquet file
+        df = spark.read.parquet(parq_files[key])
+        rdd_addDate = df.withColumn("date", lit(key)).rdd # add 'date' attribute and transform into rdd
+        transform_rdd = transform_idealista(rdd_addDate) # remove duplicates and rows w/ null
+
+    
 if __name__ == '__main__':
-
-    collections = ['income', 'preu', 'income_lookup_district', 'income_lookup_neighborhood', 'rent_lookup_district', 'rent_lookup_neighborhood']
-
-    incomeRDD = loadMongoRDD(collections[0]).cache()
-    preuRDD = loadMongoRDD(collections[1]).cache()
-    lookup_income_neighborhood_RDD = loadMongoRDD(collections[3]).map(lambda x: (x['neighborhood'], x['neighborhood_reconciled'])).cache()
-    #lookup_rent_neighborhood_RDD = loadMongoRDD(collections[5]).map(lambda x: (x['ne'], x['ne_re'])).cache()
-
-    rdd1 = generateIncomeRDD(incomeRDD)
-
-    # print('####################')
-    # print('****** RDD1 ******')
-    # rdd1.foreach(lambda r: print(r))
-
-    rdd2 = generatePreuRDD(preuRDD)
-
-    rdd3 = rdd1 \
-        .join(rdd2) \
-        .map(lambda x: (x[0], (x[1][0][0], x[1][0][1], x[1][0][2], x[1][0][3], x[1][0][4], x[1][1][1], x[1][1][2], x[1][1][3], x[1][1][4]))) \
-        .cache()
-
-    print('####################')
-    print('****** RDD3 ******')
-    rdd3.foreach(lambda r: print(r))
-    print(rdd3.count())
+    main()
+        
+        
+       
