@@ -250,9 +250,6 @@ def main():
         else:
             union_idealista_rdd = union_idealista_rdd.union(transform_rdd)
         i += 1
-            
-            
-        
 
     
 if __name__ == '__main__':

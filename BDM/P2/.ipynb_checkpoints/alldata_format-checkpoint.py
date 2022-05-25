@@ -12,6 +12,9 @@ from pyspark.sql.functions import explode, col
 
 
 def loadMongoRDD(collection: str):
+    '''
+    
+    '''
     spark = SparkSession \
         .builder \
         .master(f"local[*]") \
@@ -28,6 +31,9 @@ def loadMongoRDD(collection: str):
 
 
 def mean(x, var):
+    '''
+    
+    '''
     suma = 0
     num = len(x)
     for i in range(0,num):
@@ -37,17 +43,26 @@ def mean(x, var):
 
 
 def mostrecent(x, var):
+    '''
+    
+    '''
     x.sort(reverse=True, key=lambda x: x['year'])
     return x[0][var]
 
 
 def increase(x, var):
+    '''
+    
+    '''
     x.sort(reverse=True, key=lambda x: x['year'])
     diff = x[0][var] - x[1][var] #difference between the var of the last year and the year before
     return float("{:.2f}".format(diff))
 
 
 def unroll(x: Tuple[str, Tuple[float, str]]):
+    '''
+    
+    '''
     (_, (price, ne_re)) = x
     return (ne_re, price)
 
@@ -68,6 +83,9 @@ def generateIncomeRDD(incomeRDD):
 
 
 def generatePreuRDD(preuRDD):
+    '''
+    
+    '''
     # we remove the missing values
     preuRDD = preuRDD \
         .filter(lambda x: x['Preu'] != '--') \
@@ -130,30 +148,29 @@ def transform_idealista(rdd_in):
     '''
     
     '''
-    transform_rdd = rdd_in.map(lambda x: (x['suggestedTexts'],
-                                        x['propertyCode'], 
-                                        x['propertyType'],
-                                        x['operation'],
-                                        x['country'],
-                                        x['municipality'],
-                                        x['province'],
-                                        x['district'], 
-                                        x['neighborhood'],
-                                        x['price'],
-                                        x['priceByArea'],
-                                        x['rooms'],
-                                        x['bathrooms'],
-                                        x['size'],
-                                        x['status'],
-                                        x['floor'],
-                                        x['hasLift'],
-                                        x['parkingSpace'],
-                                        x['newDevelopment'],
-                                        x['numPhotos'],
-                                        x['distance'], 
-                                        x['exterior'])) \
-    .filter(lambda row: all(x is not None for x in row)) \
-    .distinct()
+    transform_rdd = rdd_in \
+        .map(lambda x: (x['propertyCode'], 
+                        x['propertyType'],
+                        x['operation'],
+                        x['country'],
+                        x['municipality'],
+                        x['province'],
+                        x['district'], 
+                        x['neighborhood'],
+                        x['price'],
+                        x['priceByArea'],
+                        x['rooms'],
+                        x['bathrooms'],
+                        x['size'],
+                        x['status'],
+                        x['floor'],
+                        x['hasLift'],
+                        x['parkingSpace'],
+                        x['newDevelopment'],
+                        x['numPhotos'],
+                        x['distance'], 
+                        x['exterior'])) \
+        .distinct()
     
     return transform_rdd
     
@@ -168,7 +185,7 @@ def main():
     '''
     
     '''
-    # main code
+    # main idealista-parquet code
     directory = "landing/persistent/idealista"
     parq_files = {}  # List which will store all of the full filepaths.
     # Walk the tree.
@@ -176,13 +193,63 @@ def main():
         for filename in files:
             if filename[-7:] == 'parquet':
                 parq_files[root[29:39]] = (root+'/'+filename)
+                
+    # main opendatabcn-mongodb code
+    collections = ['income', 
+                   'preu', 
+                   'income_lookup_district', 
+                   'income_lookup_neighborhood', 
+                   'rent_lookup_district', 
+                   'rent_lookup_neighborhood']
+
+    incomeRDD = loadMongoRDD(collections[0]).cache() # load opendata_income from mongodb
+    preuRDD = loadMongoRDD(collections[1]).cache() # load opendata_preu from mongodb
+    lookup_income_neighborhood_RDD = loadMongoRDD(collections[3]) \ # load opendata_lookup from mongodb
+        .map(lambda x: (x['neighborhood'], 
+                        x['neighborhood_reconciled']))
+        .cache()
+        
+    # generate and preprocess opendata_income RDD
+    rdd1 = generateIncomeRDD(incomeRDD)
+
+    # print('####################')
+    # print('****** RDD1 ******')
+    # rdd1.foreach(lambda r: print(r))
+
+    # generate and preprocess opendata_preu RDD
+    rdd2 = generatePreuRDD(preuRDD)
+
+    # merge income and preu RDDs
+    rdd3 = rdd1 \
+        .join(rdd2) \
+        .map(lambda x: (x[0], (x[1][0][0], 
+                               x[1][0][1], 
+                               x[1][0][2], 
+                               x[1][0][3], 
+                               x[1][0][4], 
+                               x[1][1][1], 
+                               x[1][1][2], 
+                               x[1][1][3], 
+                               x[1][1][4]))) \
+        .cache()
+
+    print('####################')
+    print('****** RDD3 ******')
+    rdd3.foreach(lambda r: print(r))
+    print(rdd3.count())
     
     # spark transformations in sequence for each parquet file
+    i = 0 # special loop counter
     for key in parq_files:
         # read spark df from parquet file
         df = spark.read.parquet(parq_files[key])
         rdd_addDate = df.withColumn("date", lit(key)).rdd # add 'date' attribute and transform into rdd
-        transform_rdd = transform_idealista(rdd_addDate) # remove duplicates and rows w/ null
+        transform_rdd = transform_idealista(rdd_addDate) # remove duplicates and select attributes
+        if i == 0:
+            union_idealista_rdd = transform_rdd
+        else:
+            union_idealista_rdd = union_idealista_rdd.union(transform_rdd)
+        i += 1
 
     
 if __name__ == '__main__':
