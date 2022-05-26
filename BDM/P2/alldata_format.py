@@ -1,23 +1,34 @@
-import operator
 import os
-from pyspark import RDD
-from pyspark.sql import SparkSession
-from pyspark import SparkContext
-from pyspark.sql.functions import explode, col
+import operator
 from typing import Tuple
+import pandas as pd
+import numpy as np
+from pyspark import RDD
+from pyspark import SparkContext
+from pyspark.sql import SparkSession
+from pyspark.sql.types import StructType, StructField, StringType
 from pyspark.sql.functions import lit
+from pyspark.sql.functions import explode, col
 
 
 def loadMongoRDD(collection: str, spark):
+    '''
+
+    '''
+
     dataRDD = spark.read.format("mongo") \
         .option('uri', f"mongodb://10.4.41.48/opendata.{collection}") \
         .load() \
-        .rdd
+        .rdd \
+        .cache()
 
     return dataRDD
 
 
 def mean(x, var):
+    '''
+
+    '''
     suma = 0
     num = len(x)
     for i in range(0,num):
@@ -27,22 +38,31 @@ def mean(x, var):
 
 
 def mostrecent(x, var):
+    '''
+
+    '''
     x.sort(reverse=True, key=lambda x: x['year'])
     return x[0][var]
 
 
 def increase(x, var):
+    '''
+
+    '''
     x.sort(reverse=True, key=lambda x: x['year'])
     diff = x[0][var] - x[1][var] #difference between the var of the last year and the year before
     return float("{:.2f}".format(diff))
 
 
 def unroll(x: Tuple[str, Tuple[float, str]]):
+    '''
+
+    '''
     (_, (price, ne_re)) = x
     return (ne_re, price)
 
 
-def generateIncomeRDD(incomeRDD):
+def generateIncomeRDD(incomeRDD, lookup_income_neighborhood_RDD):
     """
     RDD generated has the following structure:
     - Key: neighborhood
@@ -57,8 +77,10 @@ def generateIncomeRDD(incomeRDD):
     return rdd
 
 
-def generatePreuRDD(preuRDD):
+def generatePreuRDD(preuRDD, lookup_income_neighborhood_RDD):
+    '''
 
+    '''
     # we remove the missing values
     preuRDD = preuRDD \
         .filter(lambda x: x['Preu'] != '--') \
@@ -66,7 +88,7 @@ def generatePreuRDD(preuRDD):
         .filter(lambda x: 2020 <= x['Any']) \
         .cache()
 
-    #here we create a RDD only with the "superficie" values and and do the mean of all the price per trimester in the last two years
+    #here we create a RDD only with the "superficie" values and do the mean of all the price per trimester in the last two years
     rdd2_sup = preuRDD \
         .filter(lambda x: 'superfície' in x['Lloguer_mitja']) \
         .map(lambda x: ((x['Nom_Barri'], x['Any'], x['Nom_Districte']), float(x['Preu']))) \
@@ -76,7 +98,7 @@ def generatePreuRDD(preuRDD):
         .distinct() \
         .cache()
 
-    #here we create a RDD only with the "mensual" values and and do the mean of all the price per trimester in the last two years
+    #here we create a RDD only with the "mensual" values and do the mean of all the price per trimester in the last two years
     rdd2_men = preuRDD \
         .filter(lambda x: 'mensual' in x['Lloguer_mitja']) \
         .map(lambda x: ((x['Nom_Barri'], x['Any'], x['Nom_Districte']), float(x['Preu']))) \
@@ -111,38 +133,59 @@ def generatePreuRDD(preuRDD):
     return rdd
 
 
+def validate_idealista(rdd_in):
+    '''
+
+    '''
+
+
 def transform_idealista(rdd_in):
     '''
 
     '''
     transform_rdd = rdd_in \
-        .map(lambda x: (x['propertyCode'],
-                        x['propertyType'],
-                        x['operation'],
-                        x['country'],
-                        x['municipality'],
-                        x['province'],
-                        x['district'],
-                        x['neighborhood'],
-                        x['price'],
-                        x['priceByArea'],
-                        x['rooms'],
-                        x['bathrooms'],
-                        x['size'],
-                        x['status'],
-                        x['floor'],
-                        x['hasLift'],
-                        x['parkingSpace'],
-                        x['newDevelopment'],
-                        x['numPhotos'],
-                        x['distance'],
-                        x['exterior'])) \
+        .filter (lambda x: x['neighborhood']) \
+        .map(lambda x: (x['neighborhood'])) \
         .distinct()
+
+    # transform_rdd = rdd_in \
+    #     .filter(col('neighborhood').isNotNull()) \
+    #     .map(lambda x: (x['propertyCode'],
+    #                     x['propertyType'],
+    #                     x['operation'],
+    #                     x['country'],
+    #                     x['municipality'],
+    #                     x['province'],
+    #                     x['district'],
+    #                     x['neighborhood'],
+    #                     x['price'],
+    #                     x['priceByArea'],
+    #                     x['rooms'],
+    #                     x['bathrooms'],
+    #                     x['size'],
+    #                     x['status'],
+    #                     x['floor'],
+    #                     x['newDevelopment'],
+    #                     x['numPhotos'],
+    #                     x['distance'],
+    #                     x['exterior'])) \
+    #     .distinct()
+    transform_rdd.foreach(lambda r: print(r))
+    transform_rdd.count()
 
     return transform_rdd
 
 
-if __name__ == '__main__':
+def merge_all():
+    '''
+
+    '''
+
+
+def main():
+    '''
+
+    '''
 
     spark = SparkSession \
         .builder \
@@ -151,30 +194,30 @@ if __name__ == '__main__':
         .config('spark.jars.packages', 'org.mongodb.spark:mongo-spark-connector_2.12:3.0.1') \
         .getOrCreate()
 
-    collections = ['income', 'preu', 'income_lookup_district', 'income_lookup_neighborhood', 'rent_lookup_district', 'rent_lookup_neighborhood']
-
-    incomeRDD = loadMongoRDD(collections[0], spark).cache()
-    preuRDD = loadMongoRDD(collections[1], spark).cache()
-    lookup_income_neighborhood_RDD = loadMongoRDD(collections[3], spark).map(lambda x: (x['neighborhood'], x['neighborhood_reconciled'])).cache()
-    #lookup_rent_neighborhood_RDD = loadMongoRDD(collections[5]).map(lambda x: (x['ne'], x['ne_re'])).cache()
-
-    rdd1 = generateIncomeRDD(incomeRDD)
-
+    # collections = ['income', 'preu', 'income_lookup_district', 'income_lookup_neighborhood', 'rent_lookup_district', 'rent_lookup_neighborhood']
+    #
+    # incomeRDD = loadMongoRDD(collections[0], spark).cache()
+    # preuRDD = loadMongoRDD(collections[1], spark).cache()
+    # lookup_income_neighborhood_RDD = loadMongoRDD(collections[3], spark).map(lambda x: (x['neighborhood'], x['neighborhood_reconciled'])).cache()
+    # #lookup_rent_neighborhood_RDD = loadMongoRDD(collections[5]).map(lambda x: (x['ne'], x['ne_re'])).cache()
+    #
+    # rdd1 = generateIncomeRDD(incomeRDD, lookup_income_neighborhood_RDD)
+    #
+    # # print('####################')
+    # # print('****** RDD1 ******')
+    # # rdd1.foreach(lambda r: print(r))
+    #
+    # rdd2 = generatePreuRDD(preuRDD, lookup_income_neighborhood_RDD)
+    #
+    # rdd3 = rdd1 \
+    #     .join(rdd2) \
+    #     .map(lambda x: (x[0], (x[1][0][0], x[1][0][1], x[1][0][2], x[1][0][3], x[1][0][4], x[1][1][1], x[1][1][2], x[1][1][3], x[1][1][4]))) \
+    #     .cache()
+    #
     # print('####################')
-    # print('****** RDD1 ******')
-    # rdd1.foreach(lambda r: print(r))
-
-    rdd2 = generatePreuRDD(preuRDD)
-
-    rdd3 = rdd1 \
-        .join(rdd2) \
-        .map(lambda x: (x[0], (x[1][0][0], x[1][0][1], x[1][0][2], x[1][0][3], x[1][0][4], x[1][1][1], x[1][1][2], x[1][1][3], x[1][1][4]))) \
-        .cache()
-
-    print('####################')
-    print('****** RDD3 ******')
-    rdd3.foreach(lambda r: print(r))
-    print(rdd3.count())
+    # print('****** RDD3 ******')
+    # rdd3.foreach(lambda r: print(r))
+    # print(rdd3.count())
 
     # spark transformations in sequence for each parquet file
 
@@ -200,3 +243,6 @@ if __name__ == '__main__':
             union_idealista_rdd = union_idealista_rdd.union(transform_rdd)
         i += 1
 
+
+if __name__ == '__main__':
+    main()
